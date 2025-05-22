@@ -275,6 +275,14 @@ async def update_config(config_data: dict):
             settings.FAKE_STREAMING = config_value
             log('info', f"假流式请求已更新为：{config_value}")
             
+            # 同步更新vertex配置中的假流式设置
+            try:
+                import app.vertex.config as vertex_config
+                vertex_config.update_config('FAKE_STREAMING', config_value)
+                log('info', f"已同步更新Vertex中的假流式设置为：{config_value}")
+            except Exception as e:
+                log('warning', f"更新Vertex假流式设置时出错: {str(e)}")
+            
         elif config_key == "enable_vertex_express":
             if not isinstance(config_value, bool):
                 raise HTTPException(status_code=422, detail="参数类型错误：应为布尔值")
@@ -293,6 +301,17 @@ async def update_config(config_data: dict):
                 # 更新app_config中的API密钥列表
                 app_config.VERTEX_EXPRESS_API_KEY_VAL = [key.strip() for key in config_value.split(',') if key.strip()]
                 log('info', f"Vertex Express API Key已更新，共{len(app_config.VERTEX_EXPRESS_API_KEY_VAL)}个有效密钥")
+                
+                # 尝试刷新模型配置
+                try:
+                    from app.vertex.model_loader import refresh_models_config_cache
+                    refresh_success = await refresh_models_config_cache()
+                    if refresh_success:
+                        log('info', "更新Express API Key后成功刷新模型配置")
+                    else:
+                        log('warning', "更新Express API Key后刷新模型配置失败，将使用默认模型或现有缓存")
+                except Exception as e:
+                    log('warning', f"尝试刷新模型配置时出错: {str(e)}")
             
         elif config_key == "fake_streaming_interval":
             try:
@@ -301,6 +320,14 @@ async def update_config(config_data: dict):
                     raise ValueError("假流式间隔必须大于0")
                 settings.FAKE_STREAMING_INTERVAL = value
                 log('info', f"假流式间隔已更新为：{value}")
+                
+                # 同步更新vertex配置中的假流式间隔设置
+                try:
+                    import app.vertex.config as vertex_config
+                    vertex_config.update_config('FAKE_STREAMING_INTERVAL', value)
+                    log('info', f"已同步更新Vertex中的假流式间隔设置为：{value}")
+                except Exception as e:
+                    log('warning', f"更新Vertex假流式间隔设置时出错: {str(e)}")
             except ValueError as e:
                 raise HTTPException(status_code=422, detail=f"参数类型错误：{str(e)}")
                 
@@ -470,6 +497,14 @@ async def update_config(config_data: dict):
                 # 调用run_blocking_init_vertex
                 await run_blocking_init_vertex()
                 log('info', "Vertex AI服务重新初始化完成")
+                
+                # 显式刷新模型配置缓存
+                from app.vertex.model_loader import refresh_models_config_cache
+                refresh_success = await refresh_models_config_cache()
+                if refresh_success:
+                    log('info', "成功刷新模型配置缓存")
+                else:
+                    log('warning', "刷新模型配置缓存失败，将使用默认模型或现有缓存")
             except Exception as e:
                 log('error', f"重新初始化Vertex AI服务时出错: {str(e)}")
         

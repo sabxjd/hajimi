@@ -93,6 +93,56 @@ def load_settings():
                     else:
                         setattr(settings, name, value)
             
+            # 在加载完设置后，检查是否需要刷新模型配置
+            try:
+                # 如果加载了Google Credentials JSON或Vertex Express API Key，需要刷新模型配置
+                if (hasattr(settings, 'GOOGLE_CREDENTIALS_JSON') and settings.GOOGLE_CREDENTIALS_JSON) or \
+                   (hasattr(settings, 'VERTEX_EXPRESS_API_KEY') and settings.VERTEX_EXPRESS_API_KEY):
+                    log('info', "检测到Google Credentials JSON或Vertex Express API Key，准备刷新模型配置")
+                    
+                    # 导入必要的模块
+                    from app.vertex.model_loader import refresh_models_config_cache
+                    from app.vertex.vertex_ai_init import init_vertex_ai
+                    from app.vertex.credentials_manager import CredentialManager
+                    
+                    # 创建新的CredentialManager实例
+                    credential_manager = CredentialManager()
+                    
+                    # 如果有Google Credentials JSON，加载到CredentialManager
+                    if hasattr(settings, 'GOOGLE_CREDENTIALS_JSON') and settings.GOOGLE_CREDENTIALS_JSON:
+                        from app.vertex.credentials_manager import parse_multiple_json_credentials
+                        parsed_json_objects = parse_multiple_json_credentials(settings.GOOGLE_CREDENTIALS_JSON)
+                        if parsed_json_objects:
+                            loaded_count = credential_manager.load_credentials_from_json_list(parsed_json_objects)
+                            log('info', f"从持久化的Google Credentials JSON中加载了{loaded_count}个凭据")
+                    
+                    # 初始化Vertex AI
+                    import asyncio
+                    loop = asyncio.new_event_loop()
+                    asyncio.set_event_loop(loop)
+                    try:
+                        success = loop.run_until_complete(init_vertex_ai(credential_manager=credential_manager))
+                        if success:
+                            log('info', "成功初始化Vertex AI服务")
+                        else:
+                            log('warning', "初始化Vertex AI服务失败")
+                    finally:
+                        loop.close()
+                    
+                    # 刷新模型配置缓存
+                    loop = asyncio.new_event_loop()
+                    asyncio.set_event_loop(loop)
+                    try:
+                        refresh_success = loop.run_until_complete(refresh_models_config_cache())
+                        if refresh_success:
+                            log('info', "成功刷新模型配置缓存")
+                        else:
+                            log('warning', "刷新模型配置缓存失败")
+                    finally:
+                        loop.close()
+            except Exception as e:
+                log('error', f"刷新模型配置时出错: {str(e)}")
+            
             log('info', f"加载设置成功")
             return True
         except Exception as e:
